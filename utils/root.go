@@ -2,7 +2,9 @@ package utils
 
 import (
 	"bytes"
+	"encoding/json"
 	"encoding/pem"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -10,34 +12,63 @@ import (
 	csr "github.com/cloudflare/cfssl/csr"
 	cloudflare "github.com/cloudflare/cloudflare-go"
 	"github.com/mitchellh/go-homedir"
+	"github.com/syook/cfbot/structs"
 )
 
-func check(e error) {
+var destination string
+
+func er(msg interface{}) {
+	fmt.Println("Error:", msg)
+	os.Exit(1)
+}
+
+//Check is used as a centralized place to handle errors
+func Check(e error) {
 	if e != nil {
-		panic(e)
+		// panic(e)
+		er(e)
 	}
 }
 
+func getDestinationPath() string {
+	var directoryPath string
+	if destination != "" {
+		directoryPath, err := homedir.Dir()
+		Check(err)
+		return directoryPath
+	}
+	directoryPath = destination
+	return directoryPath
+}
+
+func saveConfigsJSON(configValues structs.Configs) {
+	directoryPath := getDestinationPath()
+	jsonValue, err := json.Marshal(configValues)
+	Check(err)
+	configFile := filepath.Join(directoryPath, "cfbot.json")
+	configJSON, err := os.OpenFile(configFile, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0700)
+	Check(err)
+	configJSON.Write(jsonValue)
+}
+
 //generateCertificate helps you to get all the certificates from cloudflare
-func generateCertificate(authUserService string, hostnames []string, validity int, saveConfigs bool) {
-	home, err := homedir.Dir()
-	check(err)
+func generateCertificate(configValues structs.Configs, saveConfigs bool) {
 
-	//TODO:
-	//By default now adding certs and creating a directory for cfbot at the home directory level, need to make this dynamic
-	folderPath := filepath.Join(home, "certs")
+	directoryPath := getDestinationPath()
+	folderPath := filepath.Join(directoryPath, "certs")
 
+	//TODO: this type rsa/ecdsa and also key length needs to be added as configs via flags
 	privateKeyRequest := csr.KeyRequest{A: "rsa", S: 2048}
-	newCertificateRequest := csr.CertificateRequest{CN: "Cloudflare", Hosts: hostnames, KeyRequest: &privateKeyRequest}
+	newCertificateRequest := csr.CertificateRequest{CN: "Cloudflare", Hosts: configValues.Hostnames, KeyRequest: &privateKeyRequest}
 
 	csrValue, key, err := csr.ParseRequest(&newCertificateRequest)
-	check(err)
+	Check(err)
 
 	var certOutBuffer bytes.Buffer
 
 	keyFile := filepath.Join(folderPath, "key.pem")
 	keyOut, err := os.OpenFile(keyFile, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0600)
-	check(err)
+	Check(err)
 
 	certVal, _ := pem.Decode(csrValue)
 	keyVal, _ := pem.Decode(key)
@@ -50,54 +81,71 @@ func generateCertificate(authUserService string, hostnames []string, validity in
 		fmt.Println("Failed to write data to key.pem")
 	}
 
-	newCertificate := cloudflare.OriginCACertificate{Hostnames: hostnames, RequestType: "origin-rsa", RequestValidity: validity, CSR: certOutBuffer.String()}
+	newCertificate := cloudflare.OriginCACertificate{Hostnames: configValues.Hostnames, RequestType: "origin-rsa", RequestValidity: configValues.Validity, CSR: certOutBuffer.String()}
 
-	api, err := cloudflare.NewWithUserServiceKey(authUserService)
+	api, err := cloudflare.NewWithUserServiceKey(configValues.AuthServiceKey)
 
-	check(err)
+	Check(err)
 	responseCertificate, err := api.CreateOriginCertificate(newCertificate)
-	check(err)
+	Check(err)
 
 	certificateFile := filepath.Join(folderPath, "certificate.pem")
 	certOut, err := os.OpenFile(certificateFile, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0600)
+	Check(err)
+
+	//write the certificate we got to the file
 	certOut.WriteString(responseCertificate.Certificate)
-	check(err)
 
 	if saveConfigs {
-		//TODO: save the configs to ~/certs/cfbot.json
+		saveConfigsJSON(configValues)
 	}
 }
 
 //verifyDirectoryExists checks if certs directory exists, if not it creates the directory in the home directory
 func verifyDirectoryExists() bool {
-	home, err := homedir.Dir()
-	check(err)
 
-	folderPath := filepath.Join(home, "certs")
-	//TODO:
-	//By default now adding certs and creating a directory for cfbot at the home directory level, need to make this dynamic
-	_, err = os.Stat(folderPath)
+	directoryPath := getDestinationPath()
+	folderPath := filepath.Join(directoryPath, "certs")
+	_, err := os.Stat(folderPath)
 
 	if os.IsNotExist(err) {
 		//if folder does not exist create a new folder
 		err := os.MkdirAll(folderPath, 0755)
-		check(err)
+		Check(err)
 		//this means it did not exist we created it
 		return false
 	}
-	// fmt.Println(folderInfo)
+
 	//this means it already existed
 	return true
 }
 
+func checkValidityOfCertificate() {
+
+}
+
 //CheckValuesAndCreateCertificate is used to complete the whole process of verifying existing directory and getting a new certificate
-func CheckValuesAndCreateCertificate(authUserService string, hostnames []string, validity int) {
+func CheckValuesAndCreateCertificate(configValues structs.Configs) {
 	directoryExisted := verifyDirectoryExists()
 	if directoryExisted {
-		//this usually means you're getting new certificates
-		generateCertificate(authUserService, hostnames, validity, false)
+		//this usually means you're about to get new certificates
+		//TODO:check if certificates need to be renewed && backup existing certificates && then try to get new certificates
+		generateCertificate(configValues, false)
 	} else {
 		//this means you're running it for the first time, save the config values
-		generateCertificate(authUserService, hostnames, validity, true)
+		generateCertificate(configValues, true)
 	}
+}
+
+//ValidateFlags is used to validate all the required flags are passed in
+func ValidateFlags(configValues structs.Configs, destinationValue string) {
+	//Checking if mandatory flags are set or not since along with viper we don't have a workaround
+	if configValues.AuthServiceKey == "" {
+		Check(errors.New("flag --auth not set"))
+	}
+	if len(configValues.Hostnames) == 0 {
+		Check(errors.New("flag --hostnames not set"))
+	}
+	destination = destinationValue
+	CheckValuesAndCreateCertificate(configValues)
 }
