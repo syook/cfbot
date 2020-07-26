@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -8,20 +9,21 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/syook/cfbot/utils"
 
-	homedir "github.com/mitchellh/go-homedir"
 	"github.com/spf13/viper"
 )
 
-var destination string
+// var destination string
 var initialRun bool
+
+const cfbotFilePath string = "/etc/cfbot"
+const version string = "0.0.1"
 
 // rootCmd represents the base command when called without any subcommands
 var rootCmd = &cobra.Command{
-	Use:   "cfbot",
-	Short: "Automatically get/renew new certificates from Cloudflare",
-	Long:  `CFbot is a CLI application for cloudflare that helps you automate getting certificates from cloudflare.`,
-	// Uncomment the following line if your bare application
-	// has an action associated with it:
+	Use:     "cfbot",
+	Short:   "Automatically get/renew new certificates from Cloudflare",
+	Long:    `CFbot is a CLI application for cloudflare that helps you automate getting certificates from cloudflare.`,
+	Version: version,
 	Run: func(cmd *cobra.Command, args []string) {
 		utils.Cfbot()
 	},
@@ -37,6 +39,10 @@ func Execute() {
 }
 
 func init() {
+	//allow the users to run this script only as sudo, because of the permissions needed to add the cron jobs and also to store the certs in /etc/cfbot
+	if !utils.CheckSudo() {
+		utils.Check(errors.New("Please Run as root. (Sudo)"))
+	}
 	cobra.OnInitialize(initConfig)
 
 	// Here you will define your flags and configuration settings.
@@ -44,8 +50,8 @@ func init() {
 	// will be global for your application.
 	rootCmd.PersistentFlags().BoolVar(&initialRun, "init", false, "Initialize the service")
 	viper.BindPFlag("init", rootCmd.PersistentFlags().Lookup("init"))
-	rootCmd.PersistentFlags().StringVarP(&destination, "destination", "d", "", "destination directory to save certs files (default is $HOME/certs)")
-	viper.BindPFlag("destination", rootCmd.PersistentFlags().Lookup("destination"))
+	// rootCmd.PersistentFlags().StringVarP(&destination, "destination", "d", "", "destination directory to save certs files (default is $HOME/certs)")
+	// viper.BindPFlag("destination", rootCmd.PersistentFlags().Lookup("destination"))
 	rootCmd.PersistentFlags().String("auth", "", "Origin CA key to be used as auth")
 	viper.BindPFlag("auth", rootCmd.PersistentFlags().Lookup("auth"))
 	rootCmd.Flags().StringSlice("hostnames", []string{}, "Hostnames for SAN")
@@ -57,41 +63,14 @@ func init() {
 // initConfig reads in config file and ENV variables if set.
 func initConfig() {
 
-	viper.SetConfigType("json")
 	if initialRun {
-		if destination != "" {
-			configFile := filepath.Join(destination, "cfbot.json")
-			viper.SetConfigFile(configFile)
-			// viper.AddConfigPath(destination)
-			// readConfig()
-		} else {
-			return
-		}
-	} else {
-		if destination != "" {
-			fmt.Println(false)
-			configFile := filepath.Join(destination, "cfbot.json")
-			viper.SetConfigFile(configFile)
-			// viper.AddConfigPath(destination)
-			// readConfig()
-		} else {
-			// By default fallback and Find home directory.
-			home, err := homedir.Dir()
-			utils.Check(err)
-			certsdir := filepath.Join(home, "cfbot")
-			configFile := filepath.Join(certsdir, "cfbot.json")
-			// viper.SetConfigType("json")
-			// viper.SetConfigFile("cfbot.json")
-			// Search config in home/certs directory
-			// viper.AddConfigPath(certsdir)
-			viper.SetConfigFile(configFile)
-			// readConfig()
-		}
+		return
 	}
+	viper.SetConfigType("json")
+	configFile := filepath.Join(cfbotFilePath, "cfbot.json")
+	viper.SetConfigFile(configFile)
 
 	viper.AutomaticEnv() // read in environment variables that match
-	//Search in the set config path above with name cfbot.json
-	// viper.SetConfigFile("cfbot.json")
 	if err := viper.ReadInConfig(); err != nil {
 		if _, ok := err.(viper.ConfigFileNotFoundError); ok {
 			// Config file not found; ignore error if desired
@@ -103,5 +82,5 @@ func initConfig() {
 			utils.Check(err)
 		}
 	}
-	fmt.Println("file used", viper.ConfigFileUsed())
+	fmt.Println("config file used", viper.ConfigFileUsed())
 }

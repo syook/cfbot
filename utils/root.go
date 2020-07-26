@@ -15,7 +15,6 @@ import (
 	csr "github.com/cloudflare/cfssl/csr"
 	cloudflare "github.com/cloudflare/cloudflare-go"
 	"github.com/fatih/color"
-	"github.com/mitchellh/go-homedir"
 	"github.com/spf13/viper"
 	"github.com/syook/cfbot/structs"
 )
@@ -29,7 +28,10 @@ var (
 	warningFlag = color.YellowString("� ")
 )
 
-var destinationValue string
+const cfbotFolderPath string = "/etc/cfbot"
+const cfbotLiveFolderPath string = "/etc/cfbot/live"
+
+// var destinationValue string
 var configValues structs.Configs
 var initialRun bool
 
@@ -49,23 +51,32 @@ func Check(e error) {
 	}
 }
 
-func getDestinationPath() string {
-	var directoryPath string
-	if destinationValue == "" {
-		homePath, err := homedir.Dir()
-		directoryPath := filepath.Join(homePath, "cfbot")
-		Check(err)
-		return directoryPath
-	}
-	directoryPath = destinationValue
-	return directoryPath
+//addCron is used to add the cron job on the initial run
+func addCron() {
+	crontabDirectory := "/etc/cron.d"
+	cronFilePath := filepath.Join(crontabDirectory, "cfbot")
+	//open file with rw-r--r--
+	cronFile, err := os.OpenFile(cronFilePath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0644)
+	Check(err)
+	cronFileString := fmt.Sprintf(`
+# /etc/cron.d/cfbot: crontab entries for the cfbot package
+#
+# Upstream recommends attempting renewal twice a day
+#
+# Renewal will only occur if expiration is within %f hours.
+SHELL=/bin/bash
+PATH=/usr/local/sbin:/usr/local/bin:/sbin:/bin:/usr/sbin:/usr/bin
+
+*/2 * * * * root test -x /usr/bin/cfbot && cfbot >> /etc/cfbot/debug.log 2>&1
+`, bufferHours)
+	cronFile.WriteString(cronFileString)
 }
 
-func saveConfigsJSON(configValues structs.Configs) {
-	directoryPath := getDestinationPath()
+func saveConfigsJSON() {
 	jsonValue, err := json.Marshal(configValues)
 	Check(err)
-	configFile := filepath.Join(directoryPath, "cfbot.json")
+	configFile := filepath.Join(cfbotFolderPath, "cfbot.json")
+	//open file with rw-rw-r--
 	configJSON, err := os.OpenFile(configFile, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0664)
 	Check(err)
 	_, err = configJSON.Write(jsonValue)
@@ -74,8 +85,6 @@ func saveConfigsJSON(configValues structs.Configs) {
 
 //generateCertificate helps you to get all the certificates from cloudflare
 func generateCertificate(saveConfigs bool) {
-	directoryPath := getDestinationPath()
-
 	//TODO: this type rsa/ecdsa and also key length needs to be added as configs via flags
 	privateKeyRequest := csr.KeyRequest{A: "rsa", S: 2048}
 	newCertificateRequest := csr.CertificateRequest{CN: "Cloudflare", Hosts: configValues.Hostnames, KeyRequest: &privateKeyRequest}
@@ -85,7 +94,7 @@ func generateCertificate(saveConfigs bool) {
 
 	var certOutBuffer bytes.Buffer
 
-	keyFile := filepath.Join(directoryPath, "key.pem")
+	keyFile := filepath.Join(cfbotLiveFolderPath, "key.pem")
 	keyOut, err := os.OpenFile(keyFile, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0600)
 	Check(err)
 
@@ -108,7 +117,7 @@ func generateCertificate(saveConfigs bool) {
 	responseCertificate, err := api.CreateOriginCertificate(newCertificate)
 	Check(err)
 
-	certificateFile := filepath.Join(directoryPath, "certificate.pem")
+	certificateFile := filepath.Join(cfbotLiveFolderPath, "certificate.pem")
 	certOut, err := os.OpenFile(certificateFile, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0600)
 	Check(err)
 
@@ -116,13 +125,13 @@ func generateCertificate(saveConfigs bool) {
 	certOut.WriteString(responseCertificate.Certificate)
 
 	if saveConfigs {
-		saveConfigsJSON(configValues)
+		saveConfigsJSON()
+		addCron()
 	}
 }
 
 func checkValidityOfCertificate() bool {
-	directoryPath := getDestinationPath()
-	certificateFile := filepath.Join(directoryPath, "certificate.pem")
+	certificateFile := filepath.Join(cfbotLiveFolderPath, "certificate.pem")
 	certificateValue, err := ioutil.ReadFile(certificateFile)
 	Check(err)
 	pemBlock, _ := pem.Decode(certificateValue)
@@ -141,19 +150,22 @@ func checkValidityOfCertificate() bool {
 }
 
 //verifyDirectoryExists checks if certs directory exists, if not it creates the directory in the home directory or the given destination path
-func verifyDirectoryExists() {
-	directoryPath := getDestinationPath()
+func verifyDirectoryExists(directoryPath string) {
 	_, err := os.Stat(directoryPath)
-	if os.IsNotExist(err) {
-		//if folder does not exist create a new folder
+	if os.IsNotExist(err) && initialRun {
+		//if folder does not exist and it is an intial run create a new folder
 		err := os.MkdirAll(directoryPath, 0755)
 		Check(err)
+		return
+	} else if err != nil {
+		Check(errors.New("Error necessary folders are not setup, if this is the first time running the script please run --init"))
 	}
 }
 
 //checkInitialRunAndCreateCertificate is used to complete the whole process of verifying existing directory and getting a new certificate
 func checkInitialRunAndCreateCertificate() {
-	verifyDirectoryExists()
+	verifyDirectoryExists(cfbotFolderPath)
+	verifyDirectoryExists(cfbotLiveFolderPath)
 	if initialRun {
 		//this means you're running it for the first time, save the config values
 		generateCertificate(true)
@@ -165,7 +177,7 @@ func checkInitialRunAndCreateCertificate() {
 	if certificatesNeedsRenewal {
 		generateCertificate(false)
 	} else {
-		fmt.Printf("%s Certificates are still valid within the buffer time, not getting new certificates", warningFlag)
+		fmt.Printf("%s Certificates are still valid within the buffer time, not getting new certificates\n", warningFlag)
 	}
 }
 
@@ -183,15 +195,21 @@ func validateFlags() {
 
 //Cfbot function is the entrypoint to the application
 func Cfbot() {
-	destination := viper.GetString("destination")
 	authServiceKey := viper.GetString("auth")
 	hosts := viper.GetStringSlice("hostnames")
 	validity := viper.GetInt("validity")
 	initialRun = viper.GetBool("init")
-	// fmt.Println(authServiceKey, hosts, validity)
-	destinationValue = destination
 	configValues.AuthServiceKey = authServiceKey
 	configValues.Hostnames = hosts
 	configValues.Validity = validity
 	validateFlags()
+}
+
+//CheckSudo is used to check if the user executing is root or not
+func CheckSudo() bool {
+	rootUser := os.Geteuid()
+	if rootUser != 0 {
+		return false
+	}
+	return true
 }
