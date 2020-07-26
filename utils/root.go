@@ -153,7 +153,7 @@ func checkValidityOfCertificate() bool {
 func verifyDirectoryExists(directoryPath string) {
 	_, err := os.Stat(directoryPath)
 	if os.IsNotExist(err) && initialRun {
-		//if folder does not exist and it is an intial run create a new folder
+		//if folder does not exist and it is an initial run create a new folder
 		err := os.MkdirAll(directoryPath, 0755)
 		Check(err)
 		return
