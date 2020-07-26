@@ -16,7 +16,7 @@ import (
 var initialRun bool
 
 const cfbotFilePath string = "/etc/cfbot"
-const version string = "0.0.1"
+const version string = "0.4.0"
 
 // rootCmd represents the base command when called without any subcommands
 var rootCmd = &cobra.Command{
