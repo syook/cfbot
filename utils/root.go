@@ -67,7 +67,7 @@ func addCron() {
 SHELL=/bin/bash
 PATH=/usr/local/sbin:/usr/local/bin:/sbin:/bin:/usr/sbin:/usr/bin
 
-*/2 * * * * root test -x /usr/bin/cfbot && cfbot >> /etc/cfbot/debug.log 2>&1
+0 */12 * * * root test -x /usr/bin/cfbot && cfbot >> /etc/cfbot/debug.log 2>&1
 `, bufferHours)
 	cronFile.WriteString(cronFileString)
 }
