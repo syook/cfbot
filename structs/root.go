@@ -4,7 +4,8 @@ package structs
 //the struct field tags are added to ensure that when json marshal happens these keys are used instead of the struct key
 //https://golang.org/pkg/encoding/json/#Marshal
 type Configs struct {
-	AuthServiceKey string   `json:"auth"`
-	Hostnames      []string `json:"hostnames"`
-	Validity       int      `json:"validity"`
+	AuthServiceKey        string   `json:"auth"`
+	Hostnames             []string `json:"hostnames"`
+	Validity              int      `json:"validity"`
+	PreviousCertificateID string   `json:"previousCertificateId"`
 }

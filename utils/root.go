@@ -39,7 +39,7 @@ var initialRun bool
 const bufferHours float64 = 48
 
 func er(msg interface{}) {
-	fmt.Println("Error:", msg)
+	fmt.Printf("%s Error: %s", errorFlag, msg)
 	os.Exit(1)
 }
 
@@ -49,6 +49,17 @@ func Check(e error) {
 		// panic(e)
 		er(e)
 	}
+}
+
+//revokePreviousCertificate is used to revoke the certificate that was replaced right now from cloudflare
+func revokePreviousCertificate() {
+	api, err := cloudflare.NewWithUserServiceKey(configValues.AuthServiceKey)
+	Check(err)
+
+	_, err = api.RevokeOriginCertificate(configValues.PreviousCertificateID)
+	Check(err)
+
+	fmt.Printf("%s Revoked Old Certificates from cloudflare\n", successFlag)
 }
 
 //addCron is used to add the cron job on the initial run
@@ -84,7 +95,7 @@ func saveConfigsJSON() {
 }
 
 //generateCertificate helps you to get all the certificates from cloudflare
-func generateCertificate(saveConfigs bool) {
+func generateCertificate() {
 	//TODO: this type rsa/ecdsa and also key length needs to be added as configs via flags
 	privateKeyRequest := csr.KeyRequest{A: "rsa", S: 2048}
 	newCertificateRequest := csr.CertificateRequest{CN: "Cloudflare", Hosts: configValues.Hostnames, KeyRequest: &privateKeyRequest}
@@ -102,11 +113,11 @@ func generateCertificate(saveConfigs bool) {
 	keyVal, _ := pem.Decode(key)
 
 	if err := pem.Encode(&certOutBuffer, &pem.Block{Type: certVal.Type, Bytes: certVal.Bytes}); err != nil {
-		fmt.Println("Failed to decode data to certVal")
+		Check(errors.New("Failed to decode data to certVal"))
 	}
 
 	if err := pem.Encode(keyOut, &pem.Block{Type: keyVal.Type, Bytes: keyVal.Bytes}); err != nil {
-		fmt.Println("Failed to write data to key.pem")
+		Check(errors.New("Failed to write data to key.pem"))
 	}
 
 	newCertificate := cloudflare.OriginCACertificate{Hostnames: configValues.Hostnames, RequestType: "origin-rsa", RequestValidity: configValues.Validity, CSR: certOutBuffer.String()}
@@ -124,10 +135,16 @@ func generateCertificate(saveConfigs bool) {
 	//write the certificate we got to the file
 	certOut.WriteString(responseCertificate.Certificate)
 
-	if saveConfigs {
+	//if it is an initial run save configs
+	if initialRun {
+		//after writing the certificate to the file, save the certificate Id in case of initial run
+		certificateID := responseCertificate.ID
+		configValues.PreviousCertificateID = certificateID
 		saveConfigsJSON()
 		addCron()
+		return
 	}
+	revokePreviousCertificate()
 }
 
 func checkValidityOfCertificate() bool {
@@ -168,14 +185,14 @@ func checkInitialRunAndCreateCertificate() {
 	verifyDirectoryExists(cfbotLiveFolderPath)
 	if initialRun {
 		//this means you're running it for the first time, save the config values
-		generateCertificate(true)
+		generateCertificate()
 		return
 	}
 	//this usually means you're supposed to get new certificates since the old ones are about to expire
 	//TODO:check if certificates need to be renewed && backup existing certificates && then try to get new certificates
 	certificatesNeedsRenewal := checkValidityOfCertificate()
 	if certificatesNeedsRenewal {
-		generateCertificate(false)
+		generateCertificate()
 	} else {
 		fmt.Printf("%s Certificates are still valid within the buffer time, not getting new certificates\n", warningFlag)
 	}
@@ -195,10 +212,16 @@ func validateFlags() {
 
 //Cfbot function is the entrypoint to the application
 func Cfbot() {
+	// fmt.Println(strings.Repeat("-", 100))
 	authServiceKey := viper.GetString("auth")
 	hosts := viper.GetStringSlice("hostnames")
 	validity := viper.GetInt("validity")
 	initialRun = viper.GetBool("init")
+	//If it is not the first time this is being run, get the certificate Id and add to configvalues
+	if !initialRun {
+		previousCertificateID := viper.GetString("previousCertificateId")
+		configValues.PreviousCertificateID = previousCertificateID
+	}
 	configValues.AuthServiceKey = authServiceKey
 	configValues.Hostnames = hosts
 	configValues.Validity = validity

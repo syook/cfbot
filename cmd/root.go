@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
+	"time"
 
 	"github.com/spf13/cobra"
 	"github.com/syook/cfbot/utils"
@@ -16,7 +18,7 @@ import (
 var initialRun bool
 
 const cfbotFilePath string = "/etc/cfbot"
-const version string = "0.4.0"
+const version string = "1.0.0"
 
 // rootCmd represents the base command when called without any subcommands
 var rootCmd = &cobra.Command{
@@ -26,6 +28,7 @@ var rootCmd = &cobra.Command{
 	Version: version,
 	Run: func(cmd *cobra.Command, args []string) {
 		utils.Cfbot()
+		fmt.Println(strings.Repeat("-", 100))
 	},
 }
 
@@ -39,6 +42,8 @@ func Execute() {
 }
 
 func init() {
+	fmt.Println(strings.Repeat("-", 100))
+	fmt.Println("TIME: ", time.Now())
 	//allow the users to run this script only as sudo, because of the permissions needed to add the cron jobs and also to store the certs in /etc/cfbot
 	if !utils.CheckSudo() {
 		utils.Check(errors.New("Please Run as root. (Sudo)"))
@@ -50,12 +55,13 @@ func init() {
 	// will be global for your application.
 	rootCmd.PersistentFlags().BoolVar(&initialRun, "init", false, "Initialize the service")
 	viper.BindPFlag("init", rootCmd.PersistentFlags().Lookup("init"))
-	// rootCmd.PersistentFlags().StringVarP(&destination, "destination", "d", "", "destination directory to save certs files (default is $HOME/certs)")
-	// viper.BindPFlag("destination", rootCmd.PersistentFlags().Lookup("destination"))
+
 	rootCmd.PersistentFlags().String("auth", "", "Origin CA key to be used as auth")
 	viper.BindPFlag("auth", rootCmd.PersistentFlags().Lookup("auth"))
+
 	rootCmd.Flags().StringSlice("hostnames", []string{}, "Hostnames for SAN")
 	viper.BindPFlag("hostnames", rootCmd.Flags().Lookup("hostnames"))
+
 	rootCmd.Flags().IntP("validity", "v", 30, "Validity for the certificates")
 	viper.BindPFlag("validity", rootCmd.Flags().Lookup("validity"))
 }
@@ -63,11 +69,13 @@ func init() {
 // initConfig reads in config file and ENV variables if set.
 func initConfig() {
 
+	//if it is initialRun expect the configs to be passed via flags and do not read the files
 	if initialRun {
 		return
 	}
 	viper.SetConfigType("json")
 	configFile := filepath.Join(cfbotFilePath, "cfbot.json")
+
 	viper.SetConfigFile(configFile)
 
 	viper.AutomaticEnv() // read in environment variables that match
@@ -78,9 +86,9 @@ func initConfig() {
 			utils.Check(err)
 		} else {
 			// Config file was found but another error was produced
-			fmt.Println("some error while", err)
+			fmt.Println("some error while reading config file", err)
 			utils.Check(err)
 		}
 	}
-	fmt.Println("config file used", viper.ConfigFileUsed())
+	fmt.Println("config file used ->", viper.ConfigFileUsed())
 }
