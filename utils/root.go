@@ -55,7 +55,6 @@ func Check(e error) {
 //executePostRenewCommnd is used to execute the post renew command given by the user
 func executePostRenewCommnd() {
 	fmt.Printf("%s Executing post renew command\n", successFlag)
-	fmt.Printf(configValues.PostRenewCommand)
 	cmd := exec.Command("bash", "-c", configValues.PostRenewCommand)
 
 	//ignore the output from the command
