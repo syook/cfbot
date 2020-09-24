@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io/ioutil"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"time"
 
@@ -49,6 +50,19 @@ func Check(e error) {
 		// panic(e)
 		er(e)
 	}
+}
+
+//executePostRenewCommnd is used to execute the post renew command given by the user
+func executePostRenewCommnd() {
+	fmt.Printf("%s Executing post renew command\n", successFlag)
+	fmt.Printf(configValues.PostRenewCommand)
+	cmd := exec.Command("bash", "-c", configValues.PostRenewCommand)
+
+	//ignore the output from the command
+	_, err := cmd.Output()
+	Check(err)
+
+	fmt.Printf("%s executed post renew command\n", successFlag)
 }
 
 //revokePreviousCertificate is used to revoke the certificate that was replaced right now from cloudflare
@@ -135,6 +149,9 @@ func generateCertificate() {
 	//write the certificate we got to the file
 	certOut.WriteString(responseCertificate.Certificate)
 
+	//always run the post renew command
+	executePostRenewCommnd()
+
 	//if it is an initial run save configs
 	if initialRun {
 		//after writing the certificate to the file, save the certificate Id in case of initial run
@@ -215,6 +232,7 @@ func Cfbot() {
 	// fmt.Println(strings.Repeat("-", 100))
 	authServiceKey := viper.GetString("auth")
 	hosts := viper.GetStringSlice("hostnames")
+	postRenew := viper.GetString("postRenew")
 	validity := viper.GetInt("validity")
 	initialRun = viper.GetBool("init")
 	//If it is not the first time this is being run, get the certificate Id and add to configvalues
@@ -225,6 +243,7 @@ func Cfbot() {
 	configValues.AuthServiceKey = authServiceKey
 	configValues.Hostnames = hosts
 	configValues.Validity = validity
+	configValues.PostRenewCommand = postRenew
 	validateFlags()
 }
 

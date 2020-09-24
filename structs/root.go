@@ -8,4 +8,5 @@ type Configs struct {
 	Hostnames             []string `json:"hostnames"`
 	Validity              int      `json:"validity"`
 	PreviousCertificateID string   `json:"previousCertificateId"`
+	PostRenewCommand      string   `json:"postRenewCommand"`
 }

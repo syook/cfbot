@@ -18,7 +18,7 @@ import (
 var initialRun bool
 
 const cfbotFilePath string = "/etc/cfbot"
-const version string = "1.0.0"
+const version string = "1.0.1"
 
 // rootCmd represents the base command when called without any subcommands
 var rootCmd = &cobra.Command{
@@ -27,6 +27,8 @@ var rootCmd = &cobra.Command{
 	Long:    `CFbot is a CLI application for cloudflare that helps you automate getting certificates from cloudflare.`,
 	Version: version,
 	Run: func(cmd *cobra.Command, args []string) {
+		fmt.Println(strings.Repeat("-", 100))
+		fmt.Println("TIME: ", time.Now())
 		utils.Cfbot()
 		fmt.Println(strings.Repeat("-", 100))
 	},
@@ -42,8 +44,6 @@ func Execute() {
 }
 
 func init() {
-	fmt.Println(strings.Repeat("-", 100))
-	fmt.Println("TIME: ", time.Now())
 	//allow the users to run this script only as sudo, because of the permissions needed to add the cron jobs and also to store the certs in /etc/cfbot
 	if !utils.CheckSudo() {
 		utils.Check(errors.New("Please Run as root. (Sudo)"))
@@ -58,6 +58,9 @@ func init() {
 
 	rootCmd.PersistentFlags().String("auth", "", "Origin CA key to be used as auth")
 	viper.BindPFlag("auth", rootCmd.PersistentFlags().Lookup("auth"))
+
+	rootCmd.Flags().StringP("postRenew", "p", "nginx -s reload", "Post command to be executed to relad the certificates")
+	viper.BindPFlag("postRenew", rootCmd.Flags().Lookup("postRenew"))
 
 	rootCmd.Flags().StringSlice("hostnames", []string{}, "Hostnames for SAN")
 	viper.BindPFlag("hostnames", rootCmd.Flags().Lookup("hostnames"))
