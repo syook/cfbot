@@ -13,13 +13,14 @@ go get github.com/syook/cfbot
 ## Example
 
 ```
-sudo cfbot --init --auth <cloudflare CA token> --hostnames "*.example.com,example.com"  --validity 7
+sudo cfbot --init --auth <cloudflare CA token> --hostnames "*.example.com,example.com"  --validity 7 -p <postRenewCommand (example: nginx -s reload)>
 ```
 
 ### The above command does the following.
 
 - Initializes all the necessary folder paths.
 - Fetches the first set of certificates from cloudflare
+- runs the provided post renew command (PS: the command is executed in a `bash` shell)
 - Saves the current config for further use
 - Adds a cron which runs twice a day and gets new certificates if the existing ones are about expire in 48 hours.
 
