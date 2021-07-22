@@ -18,7 +18,7 @@ import (
 var initialRun bool
 
 const cfbotFilePath string = "/etc/cfbot"
-const version string = "1.0.1"
+const version string = "1.0.2"
 
 // rootCmd represents the base command when called without any subcommands
 var rootCmd = &cobra.Command{
@@ -46,7 +46,7 @@ func Execute() {
 func init() {
 	//allow the users to run this script only as sudo, because of the permissions needed to add the cron jobs and also to store the certs in /etc/cfbot
 	if !utils.CheckSudo() {
-		utils.Check(errors.New("Please Run as root. (Sudo)"))
+		utils.Check(errors.New("please Run as root. (Sudo)"))
 	}
 	cobra.OnInitialize(initConfig)
 

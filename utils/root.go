@@ -55,7 +55,7 @@ func Check(e error) {
 //executePostRenewCommnd is used to execute the post renew command given by the user
 func executePostRenewCommnd() {
 	fmt.Printf("%s Executing post renew command\n", successFlag)
-	cmd := exec.Command("bash", "-c", configValues.PostRenewCommand)
+	cmd := exec.Command(configValues.PostRenew)
 
 	//ignore the output from the command
 	_, err := cmd.Output()
@@ -126,11 +126,11 @@ func generateCertificate() {
 	keyVal, _ := pem.Decode(key)
 
 	if err := pem.Encode(&certOutBuffer, &pem.Block{Type: certVal.Type, Bytes: certVal.Bytes}); err != nil {
-		Check(errors.New("Failed to decode data to certVal"))
+		Check(errors.New("failed to decode data to certVal"))
 	}
 
 	if err := pem.Encode(keyOut, &pem.Block{Type: keyVal.Type, Bytes: keyVal.Bytes}); err != nil {
-		Check(errors.New("Failed to write data to key.pem"))
+		Check(errors.New("failed to write data to key.pem"))
 	}
 
 	newCertificate := cloudflare.OriginCACertificate{Hostnames: configValues.Hostnames, RequestType: "origin-rsa", RequestValidity: configValues.Validity, CSR: certOutBuffer.String()}
@@ -175,11 +175,9 @@ func checkValidityOfCertificate() bool {
 	Check(err)
 	currentTime := time.Now()
 	validityLeft := cert.NotAfter.Sub(currentTime).Hours()
-	if validityLeft < bufferHours {
-		//if the validity is less than the buffer hours, return true so that new certificates are generated
-		return true
-	}
-	return false
+
+	//if the validity is less than the buffer hours, return true so that new certificates are generated
+	return validityLeft < bufferHours
 }
 
 //verifyDirectoryExists checks if certs directory exists, if not it creates the directory in the home directory or the given destination path
@@ -191,7 +189,7 @@ func verifyDirectoryExists(directoryPath string) {
 		Check(err)
 		return
 	} else if err != nil {
-		Check(errors.New("Error necessary folders are not setup, if this is the first time running the script please run --init"))
+		Check(errors.New("error necessary folders are not setup, if this is the first time running the script please run --init"))
 	}
 }
 
@@ -242,15 +240,12 @@ func Cfbot() {
 	configValues.AuthServiceKey = authServiceKey
 	configValues.Hostnames = hosts
 	configValues.Validity = validity
-	configValues.PostRenewCommand = postRenew
+	configValues.PostRenew = postRenew
 	validateFlags()
 }
 
 //CheckSudo is used to check if the user executing is root or not
 func CheckSudo() bool {
 	rootUser := os.Geteuid()
-	if rootUser != 0 {
-		return false
-	}
-	return true
+	return rootUser == 0
 }
