@@ -9,4 +9,5 @@ type Configs struct {
 	Validity              int      `json:"validity"`
 	PreviousCertificateID string   `json:"previousCertificateId"`
 	PostRenew             string   `json:"postRenew"`
+	OnError               string   `json:"onError"`
 }

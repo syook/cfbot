@@ -7,6 +7,7 @@ import (
 	"encoding/pem"
 	"errors"
 	"fmt"
+	"io"
 	"io/ioutil"
 	"os"
 	"os/exec"
@@ -31,6 +32,7 @@ var (
 
 const cfbotFolderPath string = "/etc/cfbot"
 const cfbotLiveFolderPath string = "/etc/cfbot/live"
+const cfbotArchiveFolderPath string = "/etc/cfbot/archive"
 
 // var destinationValue string
 var configValues structs.Configs
@@ -39,9 +41,30 @@ var initialRun bool
 //TODO: set this buffer as argument from the flags?
 const bufferHours float64 = 48
 
-func er(msg interface{}) {
-	fmt.Printf("%s Error: %s", errorFlag, msg)
+func er(e error) {
+	fmt.Printf("%s Error: %s\n", errorFlag, e.Error())
+
+	//execute the on error block
+	executeOnErrorCommand(e.Error())
 	os.Exit(1)
+}
+
+// executeOnErrorCommand is used to execute the on error command given by the user
+func executeOnErrorCommand(msg string) {
+	fmt.Print(configValues)
+	fmt.Printf("%s\n", configValues.OnError)
+	if configValues.OnError == "" {
+		return
+	}
+
+	fmt.Printf("%s Executing On Error command\n", successFlag)
+
+	cmd := exec.Command(configValues.OnError, msg)
+	//ignore the output from the command
+	_, err := cmd.Output()
+	if err != nil {
+		fmt.Printf("%s Error during onError block: %s\n", errorFlag, err)
+	}
 }
 
 //Check is used as a centralized place to handle errors
@@ -193,10 +216,49 @@ func verifyDirectoryExists(directoryPath string) {
 	}
 }
 
+func copyFileFromLiveToArchiveUsingBuffer(fileName string) bool {
+	const bufferSize int = 512
+	buf := make([]byte, bufferSize)
+	sourceFile, err := os.Open(filepath.Join(cfbotLiveFolderPath, fileName))
+	if err != nil {
+		//if err return false
+		return false
+	}
+
+	// defer will be called at the end no matter even if the app errors
+	defer sourceFile.Close()
+
+	destinationFile, err := os.Open(filepath.Join(cfbotArchiveFolderPath, fileName))
+	if err != nil {
+		//if err return false
+		return false
+	}
+
+	// defer will be called at the end no matter even if the app errors
+	defer destinationFile.Close()
+	for {
+		n, err := sourceFile.Read(buf)
+		// if any error while reading return false
+		if err != nil && err != io.EOF {
+			return false
+		}
+		//if end of file, break
+		if n == 0 {
+			break
+		}
+		// if any error while writing to file, return false
+		if _, err := destinationFile.Write(buf[:n]); err != nil {
+			return false
+		}
+	}
+	return true
+}
+
 //checkInitialRunAndCreateCertificate is used to complete the whole process of verifying existing directory and getting a new certificate
 func checkInitialRunAndCreateCertificate() {
 	verifyDirectoryExists(cfbotFolderPath)
 	verifyDirectoryExists(cfbotLiveFolderPath)
+	verifyDirectoryExists(cfbotArchiveFolderPath)
 	if initialRun {
 		//this means you're running it for the first time, save the config values
 		generateCertificate()
@@ -206,6 +268,9 @@ func checkInitialRunAndCreateCertificate() {
 	//TODO:check if certificates need to be renewed && backup existing certificates && then try to get new certificates
 	certificatesNeedsRenewal := checkValidityOfCertificate()
 	if certificatesNeedsRenewal {
+		// before generating new certificate, archive old certificate and then call generate certificate
+		copyFileFromLiveToArchiveUsingBuffer("certificate.pem")
+		copyFileFromLiveToArchiveUsingBuffer("key.pem")
 		generateCertificate()
 	} else {
 		fmt.Printf("%s Certificates are still valid within the buffer time, not getting new certificates\n", warningFlag)
@@ -230,6 +295,7 @@ func Cfbot() {
 	authServiceKey := viper.GetString("auth")
 	hosts := viper.GetStringSlice("hostnames")
 	postRenew := viper.GetString("postRenew")
+	onError := viper.GetString("onError")
 	validity := viper.GetInt("validity")
 	initialRun = viper.GetBool("init")
 	//If it is not the first time this is being run, get the certificate Id and add to configvalues
@@ -241,6 +307,7 @@ func Cfbot() {
 	configValues.Hostnames = hosts
 	configValues.Validity = validity
 	configValues.PostRenew = postRenew
+	configValues.OnError = onError
 	validateFlags()
 }
 

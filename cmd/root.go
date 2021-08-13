@@ -18,7 +18,7 @@ import (
 var initialRun bool
 
 const cfbotFilePath string = "/etc/cfbot"
-const version string = "1.0.2"
+const version string = "1.0.3"
 
 // rootCmd represents the base command when called without any subcommands
 var rootCmd = &cobra.Command{
@@ -44,11 +44,13 @@ func Execute() {
 }
 
 func init() {
+	//initialize the configs, reading env if exists
+	cobra.OnInitialize(initConfig)
+
 	//allow the users to run this script only as sudo, because of the permissions needed to add the cron jobs and also to store the certs in /etc/cfbot
 	if !utils.CheckSudo() {
 		utils.Check(errors.New("please Run as root. (Sudo)"))
 	}
-	cobra.OnInitialize(initConfig)
 
 	// Here you will define your flags and configuration settings.
 	// Cobra supports persistent flags, which, if defined here,
@@ -59,8 +61,11 @@ func init() {
 	rootCmd.PersistentFlags().String("auth", "", "Origin CA key to be used as auth")
 	viper.BindPFlag("auth", rootCmd.PersistentFlags().Lookup("auth"))
 
-	rootCmd.Flags().StringP("postRenew", "p", "nginx -s reload", "Post command to be executed to relad the certificates")
+	rootCmd.Flags().StringP("postRenew", "p", "nginx -s reload", "Post command to be executed to reload the certificates")
 	viper.BindPFlag("postRenew", rootCmd.Flags().Lookup("postRenew"))
+
+	rootCmd.Flags().StringP("onError", "e", "", "On Error command to be executed")
+	viper.BindPFlag("onError", rootCmd.Flags().Lookup("onError"))
 
 	rootCmd.Flags().StringSlice("hostnames", []string{}, "Hostnames for SAN")
 	viper.BindPFlag("hostnames", rootCmd.Flags().Lookup("hostnames"))
@@ -71,7 +76,6 @@ func init() {
 
 // initConfig reads in config file and ENV variables if set.
 func initConfig() {
-
 	//if it is initialRun expect the configs to be passed via flags and do not read the files
 	if initialRun {
 		return
